@@ -35,6 +35,7 @@ public class KeyView extends View {
 
     /** Receives the continuing pointer path for gesture keys, in screen coordinates. */
     public interface TouchSequenceListener {
+        void onStart(float screenX, float screenY);
         void onMove(float screenX, float screenY);
         void onEnd(float screenX, float screenY, boolean cancelled);
     }
@@ -274,6 +275,11 @@ public class KeyView extends View {
             case MotionEvent.ACTION_DOWN:
                 pressed = true;
                 longPressFired = false;
+                if (touchSequenceListener != null) {
+                    int[] location = new int[2];
+                    getLocationOnScreen(location);
+                    touchSequenceListener.onStart(location[0] + e.getX(), location[1] + e.getY());
+                }
                 invalidate();
                 InputFeedbacks.onKeyPress(this);
                 if (def.repeatable) {

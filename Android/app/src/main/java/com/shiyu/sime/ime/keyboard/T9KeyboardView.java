@@ -1,9 +1,16 @@
 package com.shiyu.sime.ime.keyboard;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.view.Gravity;
+import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
-import android.widget.TextView;
 
 import com.shiyu.sime.ime.InputKernel;
 import com.shiyu.sime.ime.keyboard.framework.KeyView;
@@ -67,6 +74,11 @@ public class T9KeyboardView extends KeyboardView {
     private KeyView activeLetterKey;
     private String activeLetters = "";
     private int selectedLetterIndex = 1;
+    private float letterTouchStartX;
+    private float letterKeyLeft;
+    private float letterKeyRight;
+    private PopupWindow letterPopup;
+    private LetterPopupView letterPopupView;
 
     public interface OnLeftStripListener {
         void onPinyinAltPick(int index);
@@ -190,28 +202,35 @@ public class T9KeyboardView extends KeyboardView {
                     activeLetterKey = key;
                     activeLetters = lettersForDigit(keyDigit);
                     selectedLetterIndex = Math.min(1, Math.max(0, activeLetters.length() - 1));
+                    int[] keyLocation = new int[2];
+                    key.getLocationOnScreen(keyLocation);
+                    letterKeyLeft = keyLocation[0];
+                    letterKeyRight = keyLocation[0] + key.getWidth();
+                    showLetterPopup(key);
                     updateLetterPreview();
                 } else if (action == KeyView.KeyAction.CLICK) {
                     emit(def.clickAction);
                 }
             });
             key.setTouchSequenceListener(new KeyView.TouchSequenceListener() {
+                @Override public void onStart(float screenX, float screenY) {
+                    letterTouchStartX = screenX;
+                }
+
                 @Override public void onMove(float screenX, float screenY) {
                     if (activeLetterKey != key || activeLetters.isEmpty()) return;
-                    int[] origin = new int[2];
-                    getLocationOnScreen(origin);
-                    float relative = screenX - origin[0];
-                    int index = (int) (relative / Math.max(1f, getWidth()) * activeLetters.length());
-                    selectedLetterIndex = Math.max(0, Math.min(activeLetters.length() - 1, index));
+                    selectedLetterIndex = selectLetterWithinKey(screenX);
                     updateLetterPreview();
                 }
+
                 @Override public void onEnd(float screenX, float screenY, boolean cancelled) {
                     if (activeLetterKey != key) return;
+                    dismissLetterPopup();
                     if (!cancelled && !activeLetters.isEmpty()) {
                         char letter = activeLetters.charAt(selectedLetterIndex);
-                        emit(SimeKey.directLetter(shiftLocked ? Character.toUpperCase(letter) : letter));
+                        emit(SimeKey.directLetter(shiftLocked
+                                ? Character.toUpperCase(letter) : letter));
                     }
-                    key.setLabel(lettersForDigit(keyDigit).toUpperCase(java.util.Locale.ROOT));
                     activeLetterKey = null;
                     activeLetters = "";
                 }
@@ -219,17 +238,141 @@ public class T9KeyboardView extends KeyboardView {
         }
     }
 
-    private void updateLetterPreview() {
-        if (activeLetterKey == null || activeLetters.isEmpty()) return;
-        StringBuilder label = new StringBuilder();
-        for (int i = 0; i < activeLetters.length(); i++) {
-            if (i > 0) label.append(' ');
-            char c = activeLetters.charAt(i);
-            if (shiftLocked) c = Character.toUpperCase(c);
-            if (i == selectedLetterIndex) label.append('[').append(c).append(']');
-            else label.append(c);
+    /**
+     * Maps the finger's horizontal travel inside the original key to its
+     * letters. The default (second) letter is selected at touch-down; the
+     * left and right halves of the key divide the remaining choices. This
+     * keeps every choice reachable without sliding onto a neighbouring key.
+     */
+    private int selectLetterWithinKey(float screenX) {
+        int count = activeLetters.length();
+        if (count <= 1) return 0;
+        float left = letterKeyLeft + dp(2);
+        float right = letterKeyRight - dp(2);
+        float anchor = Math.max(left, Math.min(right, letterTouchStartX));
+        float x = Math.max(left, Math.min(right, screenX));
+        int defaultIndex = Math.min(1, count - 1);
+        if (x < anchor) {
+            float distance = Math.max(1f, anchor - left);
+            float fraction = (anchor - x) / distance;
+            return Math.max(0, Math.min(defaultIndex,
+                    Math.round(defaultIndex * (1f - fraction))));
         }
-        activeLetterKey.setLabel(label.toString());
+        float distance = Math.max(1f, right - anchor);
+        float fraction = (x - anchor) / distance;
+        return Math.max(defaultIndex, Math.min(count - 1,
+                defaultIndex + Math.round((count - 1 - defaultIndex) * fraction)));
+    }
+
+    private void showLetterPopup(KeyView key) {
+        dismissLetterPopup();
+        letterPopupView = new LetterPopupView(getContext());
+        int popupWidth = Math.max(key.getWidth(),
+                (int) (dp(42) * activeLetters.length() + dp(16)));
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        popupWidth = Math.min(popupWidth, Math.max(1, screenWidth - (int) dp(16)));
+        int popupHeight = (int) dp(48);
+        letterPopup = new PopupWindow(letterPopupView, popupWidth, popupHeight, false);
+        letterPopup.setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
+        letterPopup.setTouchable(false);
+        letterPopup.setFocusable(false);
+        letterPopup.setOutsideTouchable(false);
+        letterPopup.setClippingEnabled(false);
+        if (android.os.Build.VERSION.SDK_INT >= 21) letterPopup.setElevation(dp(8));
+
+        int[] location = new int[2];
+        key.getLocationInWindow(location);
+        int x = location[0] + key.getWidth() / 2 - popupWidth / 2;
+        int y = location[1] - popupHeight - (int) dp(6);
+        x = Math.max(0, Math.min(screenWidth - popupWidth, x));
+        try {
+            letterPopup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, x, y);
+        } catch (RuntimeException ignored) {
+            // A transient IME window-token failure must not break key input.
+            letterPopup = null;
+            letterPopupView = null;
+        }
+    }
+
+    private void updateLetterPreview() {
+        if (letterPopupView != null) {
+            letterPopupView.setLetters(activeLetters, selectedLetterIndex, shiftLocked);
+        }
+    }
+
+    private void dismissLetterPopup() {
+        if (letterPopup != null) {
+            try {
+                if (letterPopup.isShowing()) letterPopup.dismiss();
+            } catch (RuntimeException ignored) { }
+        }
+        letterPopup = null;
+        letterPopupView = null;
+    }
+
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        dismissLetterPopup();
+        activeLetterKey = null;
+        activeLetters = "";
+        super.onDetachedFromWindow();
+    }
+
+    /** Small non-touchable floating selector displayed above the held key. */
+    private final class LetterPopupView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private String letters = "";
+        private int selected = 1;
+        private boolean uppercase;
+        private final float radius = dp(10);
+
+        LetterPopupView(Context context) {
+            super(context);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+
+        void setLetters(String value, int index, boolean upper) {
+            letters = value != null ? value : "";
+            selected = index;
+            uppercase = upper;
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = dp(2);
+            rect.set(inset, inset, getWidth() - inset, getHeight() - inset);
+            paint.setColor(theme.functionKeyBackground);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShadowLayer(dp(5), 0f, dp(2), 0x66000000);
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            paint.clearShadowLayer();
+
+            if (letters.isEmpty()) return;
+            float cellWidth = rect.width() / letters.length();
+            for (int i = 0; i < letters.length(); i++) {
+                float left = rect.left + i * cellWidth;
+                if (i == selected) {
+                    RectF selectedRect = new RectF(left + dp(2), rect.top + dp(2),
+                            left + cellWidth - dp(2), rect.bottom - dp(2));
+                    paint.setColor(theme.accentColor);
+                    canvas.drawRoundRect(selectedRect, dp(7), dp(7), paint);
+                }
+                char c = letters.charAt(i);
+                if (uppercase) c = Character.toUpperCase(c);
+                paint.setColor(i == selected ? android.graphics.Color.WHITE : theme.keyText);
+                paint.setTextAlign(Paint.Align.CENTER);
+                paint.setTextSize(dp(23));
+                paint.setTypeface(i == selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                Paint.FontMetrics fm = paint.getFontMetrics();
+                float baseline = getHeight() / 2f - (fm.ascent + fm.descent) / 2f;
+                canvas.drawText(String.valueOf(c), left + cellWidth / 2f, baseline, paint);
+            }
+        }
     }
 
     private void refreshDualStateKeys() {
