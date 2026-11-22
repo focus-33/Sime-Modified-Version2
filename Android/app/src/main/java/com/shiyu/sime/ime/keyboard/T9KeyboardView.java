@@ -11,6 +11,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import com.shiyu.sime.ime.InputKernel;
 import com.shiyu.sime.ime.keyboard.framework.KeyView;
