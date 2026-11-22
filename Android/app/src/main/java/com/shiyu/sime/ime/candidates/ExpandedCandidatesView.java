@@ -69,6 +69,8 @@ public class ExpandedCandidatesView extends LinearLayout {
     private LinearLayout leftStrip;
     private ScrollView mainScroll;
     private LinearLayout grid;
+    /** Reset the candidate grid after the next manually selected candidate is decoded. */
+    private boolean resetMainScrollOnNextRender;
 
     private Listener listener = new Listener() {};
 
@@ -186,6 +188,21 @@ public class ExpandedCandidatesView extends LinearLayout {
                 (safeAlts.isEmpty() && safeFallback.isEmpty()) ? GONE : VISIBLE);
         renderLeftStrip(safeAlts, safeFallback);
         renderGrid(candidates, gridStartIndex);
+        if (resetMainScrollOnNextRender) {
+            resetMainScrollOnNextRender = false;
+            // Wait until the rebuilt rows have been measured; otherwise the
+            // ScrollView may clamp against the previous grid height and keep
+            // the old page offset when the next syllable has fewer rows.
+            mainScroll.post(() -> mainScroll.scrollTo(0, 0));
+        }
+    }
+
+    /**
+     * Request a top reset after the next candidate snapshot is rendered.
+     * Called immediately before the kernel processes a manual word pick.
+     */
+    public void resetMainScrollOnNextRender() {
+        resetMainScrollOnNextRender = true;
     }
 
     private void renderLeftStrip(List<InputKernel.PinyinAlt> alts, String fallbackLetters) {

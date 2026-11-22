@@ -216,7 +216,13 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         if (expandedView == null) {
             expandedView = new ExpandedCandidatesView(getContext());
             expandedView.setListener(new ExpandedCandidatesView.Listener() {
-                @Override public void onCandidatePick(int idx) { kernel.onCandidatePick(idx); }
+                @Override public void onCandidatePick(int idx) {
+                    // A manually selected word advances the composition to
+                    // the next syllable. Its new candidate list must start at
+                    // the top, regardless of the page viewed in the old list.
+                    expandedView.resetMainScrollOnNextRender();
+                    kernel.onCandidatePick(idx);
+                }
                 @Override public void onCandidateLongPress(int idx, View anchor) {
                     showCandidateMenu(idx, anchor);
                 }
