@@ -1,0 +1,95 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+        with:
+          path: SimeApp
+
+      - name: Engine source (bundled in this repo, exact version)
+        run: |
+          mkdir -p Sime
+          cp -r SimeApp/engine-src/. Sime/
+          ls Sime
+
+      - name: Fetch model data matching the bundled version
+        run: |
+          git clone https://github.com/Ismantic/Sime.git SimeData
+          cd SimeData
+          found=""
+          for c in $(git rev-list HEAD -- save); do
+            git checkout -q "$c" -- save 2>/dev/null || continue
+            if (cd save && sha256sum -c ../../SimeApp/expected-model.sha256 --status); then
+              found="$c"; break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "No commit of Ismantic/Sime has the model files matching expected-model.sha256"
+            exit 1
+          fi
+          echo "Model data from commit $found"
+          cd ..
+          for f in sime.dict sime.cnt sime.ft.dict.txt gru.embedding.i8 gru.pinyin.ncnn.param gru.pinyin.ncnn.bin gru.t9.ncnn.param gru.t9.ncnn.bin; do
+            cp "SimeData/save/$f" SimeApp/Android/app/src/main/assets/
+          done
+          (cd SimeApp/Android/app/src/main/assets && sha256sum -c ../../../../../expected-model.sha256)
+
+      - name: Add alternate readings to the dictionary (from rime-ice)
+        run: |
+          # 补充多音词的其他读音（如 便宜 pian'yi）。失败时保留原词典，不影响构建。
+          git clone --depth 1 https://github.com/iDvel/rime-ice.git rime-ice || true
+          if [ -d rime-ice/cn_dicts ]; then
+            if bash SimeApp/tools/patch_dict.sh Sime rime-ice/cn_dicts \
+                 SimeApp/Android/app/src/main/assets/sime.dict /tmp/sime.patched.dict; then
+              cp /tmp/sime.patched.dict SimeApp/Android/app/src/main/assets/sime.dict
+            else
+              echo "::warning::dictionary patch failed, using the original sime.dict"
+            fi
+          else
+            echo "::warning::rime-ice not available, using the original sime.dict"
+          fi
+
+      - name: Fetch ncnn source
+        run: |
+          mkdir -p SimeApp/Android/build
+          if [ -f SimeApp/ncnn-20260526-full-source.zip ]; then
+            cp SimeApp/ncnn-20260526-full-source.zip ncnn.zip
+          else
+            curl -fL -o ncnn.zip https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-full-source.zip
+          fi
+          unzip -q ncnn.zip -d SimeApp/Android/build/ncnn-20260526
+          ls SimeApp/Android/build/ncnn-20260526 | head
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "ndk;30.0.14904198" "cmake;3.22.1"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build debug APK
+        working-directory: SimeApp/Android
+        env:
+          SIME_ENGINE_ROOT: ${{ github.workspace }}/Sime
+        run: gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SimeApp-debug-apk
+          path: SimeApp/Android/app/build/outputs/apk/debug/*.apk
