@@ -1,0 +1,51 @@
+--- a/Android/app/src/main/java/com/shiyu/sime/ime/engine/FuzzyPinyinEngine.java
++++ b/Android/app/src/main/java/com/shiyu/sime/ime/engine/FuzzyPinyinEngine.java
+@@ -109,24 +109,38 @@
+             byRule.add(ruleVariants);
+         }
+ 
+-        // Round-robin across rule families. MAX_VARIANTS remains unchanged,
+-        // so the native decoder query budget and worst-case work do not grow.
+-        int round = 0;
+-        boolean added;
+-        do {
+-            added = false;
++        // Round-robin across rule families, but cap distinct query strings,
++        // not mapping variants. In T9, different pinyin syllables can share
++        // exactly the same digit query (for example xing->xin and ying->yin).
++        // Keep every source/target mapping for an admitted query so the decoder
++        // can validate the returned pinyin units and select the correct one.
++        // The decoder caches by variant.value, so these extra mappings do not
++        // cause extra native queries.
++        Set<String> selectedQueries = new HashSet<>();
++        for (FuzzyVariant existing : out.values()) {
++            selectedQueries.add(existing.value);
++        }
++
++        int maxRounds = 0;
++        for (LinkedHashMap<String, FuzzyVariant> ruleVariants : byRule) {
++            maxRounds = Math.max(maxRounds, ruleVariants.size());
++        }
++        for (int round = 0; round < maxRounds; round++) {
+             for (LinkedHashMap<String, FuzzyVariant> ruleVariants : byRule) {
+-                if (out.size() >= MAX_VARIANTS) return;
+                 if (round >= ruleVariants.size()) continue;
+                 Map.Entry<String, FuzzyVariant> entry =
+                         new ArrayList<>(ruleVariants.entrySet()).get(round);
++                String query = entry.getValue().value;
++                if (!selectedQueries.contains(query)
++                        && selectedQueries.size() >= MAX_VARIANTS) {
++                    continue;
++                }
+                 if (!out.containsKey(entry.getKey())) {
+                     out.put(entry.getKey(), entry.getValue());
+-                    added = true;
++                    selectedQueries.add(query);
+                 }
+             }
+-            round++;
+-        } while (added && out.size() < MAX_VARIANTS);
++        }
+     }
+ 
+     private static String key(String syllable, boolean t9) {
