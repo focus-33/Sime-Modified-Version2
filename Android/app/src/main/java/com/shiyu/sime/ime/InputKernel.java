@@ -625,19 +625,15 @@ public class InputKernel {
 
     private void handleLetter(char c) {
         if (mode == KeyboardMode.ENGLISH) {
+            // English mode is literal input on both QWERTY and T9 layouts:
+            // commit each tapped letter immediately and never show predictions.
             exitPrediction();
-            // Full QWERTY English is literal typing: commit each tapped
-            // character immediately and never request word completions.
-            // Keep the existing T9 English completion path unchanged.
-            if (chineseLayout == ChineseLayout.QWERTY) {
-                if (englishBuffer.length() > 0) commitEnglishBuffer();
-                fireCommitText(String.valueOf(c));
-                previousCommitEndsWithAsciiWord = endsWithAsciiWord(String.valueOf(c));
-            } else {
-                englishBuffer.append(c);
-                fireSetComposingText(englishBuffer.toString());
-                refreshEnglishCompletions();
-            }
+            if (englishBuffer.length() > 0) commitEnglishBuffer();
+            String literal = String.valueOf(c);
+            fireCommitText(literal);
+            previousCommitEndsWithAsciiWord = endsWithAsciiWord(literal);
+            candidates = Collections.emptyList();
+            publish();
             return;
         }
         if (!isChineseLike()) {
@@ -669,17 +665,12 @@ public class InputKernel {
 
     private void handleSeparator() {
         if (mode == KeyboardMode.ENGLISH) {
-            if (chineseLayout == ChineseLayout.QWERTY) {
-                // Full QWERTY English commits punctuation literally too.
-                if (englishBuffer.length() > 0) commitEnglishBuffer();
-                fireCommitText("'");
-                previousCommitEndsWithAsciiWord = false;
-            } else {
-                // Preserve the existing T9 English apostrophe/completion path.
-                englishBuffer.append('\'');
-                fireSetComposingText(englishBuffer.toString());
-                refreshEnglishCompletions();
-            }
+            // Punctuation is literal in English mode on both layouts.
+            if (englishBuffer.length() > 0) commitEnglishBuffer();
+            fireCommitText("'");
+            previousCommitEndsWithAsciiWord = false;
+            candidates = Collections.emptyList();
+            publish();
             return;
         }
         if (!isChineseLike()) {

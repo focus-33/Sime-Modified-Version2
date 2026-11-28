@@ -378,13 +378,31 @@ public class InputKernelTest {
     }
 
     @Test
-    public void t9EnglishKeepsItsExistingCompletionBuffer() {
+    public void t9EnglishLetterCommitsImmediatelyWithoutPredictions() {
         kernel.setChineseLayout(ChineseLayout.T9);
         kernel.switchMode(KeyboardMode.ENGLISH);
         kernel.onKey(SimeKey.letter('a'));
+        kernel.onKey(SimeKey.letter('b'));
 
-        assertTrue(listener.committed.isEmpty());
-        assertEquals("a", snap().englishBuffer);
+        assertEquals(Arrays.asList("a", "b"), listener.committed);
+        assertEquals("", snap().englishBuffer);
+        assertTrue(candidates().isEmpty());
+        assertEquals(0, decoder.getTokensCalls);
+        assertTrue(state().buffer.isEmpty());
+    }
+
+    @Test
+    public void t9EnglishPunctuationIsLiteralAndDoesNotStartPredictions() {
+        kernel.setChineseLayout(ChineseLayout.T9);
+        kernel.switchMode(KeyboardMode.ENGLISH);
+        kernel.onKey(SimeKey.letter('i'));
+        kernel.onKey(SimeKey.separator());
+        kernel.onKey(SimeKey.letter('m'));
+
+        assertEquals(Arrays.asList("i", "'", "m"), listener.committed);
+        assertEquals("", snap().englishBuffer);
+        assertTrue(candidates().isEmpty());
+        assertEquals(0, decoder.getTokensCalls);
     }
 
     @Test
