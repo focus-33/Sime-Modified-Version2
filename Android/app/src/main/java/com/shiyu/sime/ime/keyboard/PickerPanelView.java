@@ -136,6 +136,15 @@ public class PickerPanelView extends KeyboardView {
             header.addView(exportBtn, new LinearLayout.LayoutParams(0,
                     LayoutParams.MATCH_PARENT, 1f));
         } else {
+            // Keep the right header slot the same width as the left spacer and
+            // the import/export slots on the personal-dictionary tab. This
+            // keeps the tab pill at exactly the same horizontal position in
+            // both panels while the clear button itself remains 36dp wide.
+            LinearLayout clearSlot = new LinearLayout(getContext());
+            clearSlot.setGravity(Gravity.CENTER);
+            header.addView(clearSlot, new LinearLayout.LayoutParams(0,
+                    LayoutParams.MATCH_PARENT, 1f));
+
             TextView clearBtn = new TextView(getContext());
             clearBtn.setText("🗑");
             clearBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
@@ -147,7 +156,7 @@ public class PickerPanelView extends KeyboardView {
                 clipboardStore.clearAll();
                 renderList();
             });
-            header.addView(clearBtn, new LinearLayout.LayoutParams(dp(36), dp(36)));
+            clearSlot.addView(clearBtn, new LinearLayout.LayoutParams(dp(36), dp(36)));
         }
 
         // Dedicated add-entry row below the tabs. It occupies normal layout
