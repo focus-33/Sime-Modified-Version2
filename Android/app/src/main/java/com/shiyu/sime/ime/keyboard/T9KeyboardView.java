@@ -76,8 +76,10 @@ public class T9KeyboardView extends KeyboardView {
     private String activeLetters = "";
     private int selectedLetterIndex = 1;
     private float letterTouchStartX;
+    private float letterTouchStartY;
     private float letterKeyLeft;
     private float letterKeyRight;
+    private char activeLetterDigit;
     private PopupWindow letterPopup;
     private LetterPopupView letterPopupView;
 
@@ -201,6 +203,7 @@ public class T9KeyboardView extends KeyboardView {
             key.setListener((def, action) -> {
                 if (action == KeyView.KeyAction.LONG_PRESS) {
                     activeLetterKey = key;
+                    activeLetterDigit = keyDigit;
                     activeLetters = lettersForDigit(keyDigit);
                     selectedLetterIndex = Math.min(1, Math.max(0, activeLetters.length() - 1));
                     int[] keyLocation = new int[2];
@@ -216,16 +219,21 @@ public class T9KeyboardView extends KeyboardView {
             key.setTouchSequenceListener(new KeyView.TouchSequenceListener() {
                 @Override public void onStart(float screenX, float screenY) {
                     letterTouchStartX = screenX;
+                    letterTouchStartY = screenY;
                 }
 
                 @Override public void onMove(float screenX, float screenY) {
                     if (activeLetterKey != key || activeLetters.isEmpty()) return;
-                    selectedLetterIndex = selectLetterWithinKey(screenX);
+                    selectedLetterIndex = selectLetterAt(screenX, screenY);
                     updateLetterPreview();
                 }
 
                 @Override public void onEnd(float screenX, float screenY, boolean cancelled) {
                     if (activeLetterKey != key) return;
+                    if (!cancelled && !activeLetters.isEmpty()) {
+                        selectedLetterIndex = selectLetterAt(screenX, screenY);
+                        updateLetterPreview();
+                    }
                     dismissLetterPopup();
                     if (!cancelled && !activeLetters.isEmpty()) {
                         char letter = activeLetters.charAt(selectedLetterIndex);
@@ -240,19 +248,34 @@ public class T9KeyboardView extends KeyboardView {
     }
 
     /**
-     * Maps the finger's horizontal travel inside the original key to its
-     * letters. The default (second) letter is selected at touch-down; the
-     * left and right halves of the key divide the remaining choices. This
-     * keeps every choice reachable without sliding onto a neighbouring key.
+     * Maps movement within the held key to the popup layout. For 7/9,
+     * the fourth letter occupies a small cell directly above the default
+     * Q/X cell; a short upward stroke selects it. Horizontal movement still
+     * selects P/Q/R or W/X/Y without reaching neighbouring keys.
      */
-    private int selectLetterWithinKey(float screenX) {
+    private int selectLetterAt(float screenX, float screenY) {
+        if (activeLetters.length() == 4
+                && (activeLetterDigit == '7' || activeLetterDigit == '9')) {
+            float upwardThreshold = letterTouchStartY - dp(22);
+            if (screenY < upwardThreshold) {
+                return 3; // S above Q; Z above X.
+            }
+            // Returning below the popup's upper cell restores the lower row.
+            return selectLowerRowLetter(screenX);
+        }
+        return selectLowerRowLetter(screenX);
+    }
+
+    private int selectLowerRowLetter(float screenX) {
         int count = activeLetters.length();
         if (count <= 1) return 0;
         float left = letterKeyLeft + dp(2);
         float right = letterKeyRight - dp(2);
         float anchor = Math.max(left, Math.min(right, letterTouchStartX));
         float x = Math.max(left, Math.min(right, screenX));
-        int defaultIndex = Math.min(1, count - 1);
+        int lowerCount = (activeLetterDigit == '7' || activeLetterDigit == '9')
+                ? 3 : count;
+        int defaultIndex = Math.min(1, lowerCount - 1);
         if (x < anchor) {
             float distance = Math.max(1f, anchor - left);
             float fraction = (anchor - x) / distance;
@@ -261,18 +284,19 @@ public class T9KeyboardView extends KeyboardView {
         }
         float distance = Math.max(1f, right - anchor);
         float fraction = (x - anchor) / distance;
-        return Math.max(defaultIndex, Math.min(count - 1,
-                defaultIndex + Math.round((count - 1 - defaultIndex) * fraction)));
+        return Math.max(defaultIndex, Math.min(lowerCount - 1,
+                defaultIndex + Math.round((lowerCount - 1 - defaultIndex) * fraction)));
     }
 
     private void showLetterPopup(KeyView key) {
         dismissLetterPopup();
         letterPopupView = new LetterPopupView(getContext());
+        boolean stackedFourth = activeLetterDigit == '7' || activeLetterDigit == '9';
         int popupWidth = Math.max(key.getWidth(),
-                (int) (dp(42) * activeLetters.length() + dp(16)));
+                (int) (dp(42) * (stackedFourth ? 3 : activeLetters.length()) + dp(16)));
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         popupWidth = Math.min(popupWidth, Math.max(1, screenWidth - (int) dp(16)));
-        int popupHeight = (int) dp(48);
+        int popupHeight = (int) dp(stackedFourth ? 68 : 48);
         letterPopup = new PopupWindow(letterPopupView, popupWidth, popupHeight, false);
         letterPopup.setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
         letterPopup.setTouchable(false);
@@ -354,25 +378,43 @@ public class T9KeyboardView extends KeyboardView {
             paint.clearShadowLayer();
 
             if (letters.isEmpty()) return;
-            float cellWidth = rect.width() / letters.length();
-            for (int i = 0; i < letters.length(); i++) {
-                float left = rect.left + i * cellWidth;
-                if (i == selected) {
-                    RectF selectedRect = new RectF(left + dp(2), rect.top + dp(2),
-                            left + cellWidth - dp(2), rect.bottom - dp(2));
-                    paint.setColor(theme.accentColor);
-                    canvas.drawRoundRect(selectedRect, dp(7), dp(7), paint);
+            boolean stackedFourth = (letters.equals("pqrs") || letters.equals("wxyz"));
+            if (stackedFourth) {
+                float cellWidth = rect.width() / 3f;
+                float rowHeight = rect.height() / 2f;
+                // P/Q/R or W/X/Y occupy the lower row; S/Z sits above Q/X.
+                for (int i = 0; i < 3; i++) {
+                    drawLetterCell(canvas, i, rect.left + i * cellWidth,
+                            rect.top + rowHeight, cellWidth, rowHeight);
                 }
-                char c = letters.charAt(i);
-                if (uppercase) c = Character.toUpperCase(c);
-                paint.setColor(i == selected ? android.graphics.Color.WHITE : theme.keyText);
-                paint.setTextAlign(Paint.Align.CENTER);
-                paint.setTextSize(dp(23));
-                paint.setTypeface(i == selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                Paint.FontMetrics fm = paint.getFontMetrics();
-                float baseline = getHeight() / 2f - (fm.ascent + fm.descent) / 2f;
-                canvas.drawText(String.valueOf(c), left + cellWidth / 2f, baseline, paint);
+                drawLetterCell(canvas, 3, rect.left + cellWidth,
+                        rect.top, cellWidth, rowHeight);
+            } else {
+                float cellWidth = rect.width() / letters.length();
+                for (int i = 0; i < letters.length(); i++) {
+                    drawLetterCell(canvas, i, rect.left + i * cellWidth,
+                            rect.top, cellWidth, rect.height());
+                }
             }
+        }
+
+        private void drawLetterCell(Canvas canvas, int index, float left,
+                                    float top, float width, float height) {
+            if (index == selected) {
+                RectF selectedRect = new RectF(left + dp(2), top + dp(2),
+                        left + width - dp(2), top + height - dp(2));
+                paint.setColor(theme.accentColor);
+                canvas.drawRoundRect(selectedRect, dp(7), dp(7), paint);
+            }
+            char c = letters.charAt(index);
+            if (uppercase) c = Character.toUpperCase(c);
+            paint.setColor(index == selected ? android.graphics.Color.WHITE : theme.keyText);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(23));
+            paint.setTypeface(index == selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            Paint.FontMetrics fm = paint.getFontMetrics();
+            float baseline = top + height / 2f - (fm.ascent + fm.descent) / 2f;
+            canvas.drawText(String.valueOf(c), left + width / 2f, baseline, paint);
         }
     }
 

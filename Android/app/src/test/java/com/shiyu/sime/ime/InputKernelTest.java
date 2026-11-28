@@ -35,6 +35,7 @@ public class InputKernelTest {
         int sentenceCalls = 0;
         int numSentenceCalls = 0;
         int t9PinyinCalls = 0;
+        int getTokensCalls = 0;
 
         @Override
         public DecodeResult[] decodeSentence(String pinyin, int limit) {
@@ -69,6 +70,7 @@ public class InputKernelTest {
 
         @Override
         public DecodeResult[] getTokens(String prefix, int limit, boolean enOnly) {
+            getTokensCalls++;
             return new DecodeResult[0];
         }
 
@@ -351,23 +353,38 @@ public class InputKernelTest {
     // ---------- English mode ----------
 
     @Test
-    public void englishLetterCommitsDirect() {
+    public void qwertyEnglishLetterCommitsImmediatelyWithoutCompletions() {
         kernel.switchMode(KeyboardMode.ENGLISH);
         kernel.onKey(SimeKey.letter('a'));
-        assertTrue(listener.committed.isEmpty());
-        assertEquals("a", snap().englishBuffer);
+        assertEquals(Arrays.asList("a"), listener.committed);
+        assertEquals("", snap().englishBuffer);
+        assertTrue(candidates().isEmpty());
+        assertEquals(0, decoder.getTokensCalls);
         assertTrue(state().buffer.isEmpty());
     }
 
     @Test
-    public void englishSpaceAndEnterCommitWordWithoutExtraSpace() {
+    public void qwertyEnglishSpaceAndEnterDoNotCreateWordCompositions() {
         kernel.switchMode(KeyboardMode.ENGLISH);
         for (char c : "hel".toCharArray()) kernel.onKey(SimeKey.letter(c));
         kernel.onKey(SimeKey.space());
         for (char c : "hel".toCharArray()) kernel.onKey(SimeKey.letter(c));
         kernel.onKey(SimeKey.enter());
 
-        assertEquals(Arrays.asList("hel", "hel"), listener.committed);
+        assertEquals(Arrays.asList("h", "e", "l", " ", "h", "e", "l"),
+                listener.committed);
+        assertEquals(1, listener.enters);
+        assertEquals("", snap().englishBuffer);
+    }
+
+    @Test
+    public void t9EnglishKeepsItsExistingCompletionBuffer() {
+        kernel.setChineseLayout(ChineseLayout.T9);
+        kernel.switchMode(KeyboardMode.ENGLISH);
+        kernel.onKey(SimeKey.letter('a'));
+
+        assertTrue(listener.committed.isEmpty());
+        assertEquals("a", snap().englishBuffer);
     }
 
     @Test

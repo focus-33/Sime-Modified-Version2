@@ -626,9 +626,18 @@ public class InputKernel {
     private void handleLetter(char c) {
         if (mode == KeyboardMode.ENGLISH) {
             exitPrediction();
-            englishBuffer.append(c);
-            fireSetComposingText(englishBuffer.toString());
-            refreshEnglishCompletions();
+            // Full QWERTY English is literal typing: commit each tapped
+            // character immediately and never request word completions.
+            // Keep the existing T9 English completion path unchanged.
+            if (chineseLayout == ChineseLayout.QWERTY) {
+                if (englishBuffer.length() > 0) commitEnglishBuffer();
+                fireCommitText(String.valueOf(c));
+                previousCommitEndsWithAsciiWord = endsWithAsciiWord(String.valueOf(c));
+            } else {
+                englishBuffer.append(c);
+                fireSetComposingText(englishBuffer.toString());
+                refreshEnglishCompletions();
+            }
             return;
         }
         if (!isChineseLike()) {
@@ -660,10 +669,17 @@ public class InputKernel {
 
     private void handleSeparator() {
         if (mode == KeyboardMode.ENGLISH) {
-            // Apostrophe in English mode: append to buffer (e.g. "don't")
-            englishBuffer.append('\'');
-            fireSetComposingText(englishBuffer.toString());
-            refreshEnglishCompletions();
+            if (chineseLayout == ChineseLayout.QWERTY) {
+                // Full QWERTY English commits punctuation literally too.
+                if (englishBuffer.length() > 0) commitEnglishBuffer();
+                fireCommitText("'");
+                previousCommitEndsWithAsciiWord = false;
+            } else {
+                // Preserve the existing T9 English apostrophe/completion path.
+                englishBuffer.append('\'');
+                fireSetComposingText(englishBuffer.toString());
+                refreshEnglishCompletions();
+            }
             return;
         }
         if (!isChineseLike()) {
