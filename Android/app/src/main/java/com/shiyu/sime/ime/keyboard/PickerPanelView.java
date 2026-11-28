@@ -77,93 +77,101 @@ public class PickerPanelView extends KeyboardView {
     }
 
     private void build() {
-        // === Header row: tabs + "+" ===
+        // === Header row: import | tabs | export ===
         LinearLayout header = new LinearLayout(getContext());
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(8), dp(4), dp(8), dp(4));
+        header.setPadding(dp(6), dp(2), dp(6), dp(2));
         LayoutParams headerLp = new LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(40));
         addView(header, headerLp);
 
-        // Spacer left of tabs (balances the "+" on the right).
-        View leftSpacer = new View(getContext());
-        leftSpacer.setLayoutParams(new LinearLayout.LayoutParams(
-                0, 0, 1f));
-        header.addView(leftSpacer);
-
-        // Tab pill: [剪切板 | 个人字典]. Active tab uses accent color.
-        LinearLayout tabPill = new LinearLayout(getContext());
-        tabPill.setOrientation(LinearLayout.HORIZONTAL);
-        tabPill.setBackground(roundedRect(theme.functionKeyBackground, dp(16)));
-        tabPill.setPadding(dp(2), dp(2), dp(2), dp(2));
-        header.addView(tabPill);
-
-        tabPill.addView(buildTab("剪切板", Tab.CLIPBOARD));
-        tabPill.addView(buildTab("个人字典", Tab.QUICK_PHRASE));
-
-        View rightSpacer = new View(getContext());
-        rightSpacer.setLayoutParams(new LinearLayout.LayoutParams(
-                0, 0, 1f));
-        header.addView(rightSpacer);
-
-        // Right-side action button:
-        //   QUICK_PHRASE tab → "+"  (add a new phrase)
-        //   CLIPBOARD    tab → "🗑" (clear all clipboard history)
-        TextView actionBtn = new TextView(getContext());
-        actionBtn.setGravity(Gravity.CENTER);
-        actionBtn.setBackground(makeCircleBg(
-                theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
         if (activeTab == Tab.QUICK_PHRASE) {
-            // Export is a separate text action so the existing + add-entry
-            // control keeps its original behavior and hit target.
-            TextView exportBtn = new TextView(getContext());
-            exportBtn.setText("导出自学习文件");
-            exportBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CAPTION);
-            exportBtn.setTextColor(theme.accentColor);
-            exportBtn.setGravity(Gravity.CENTER);
-            exportBtn.setPadding(dp(8), 0, dp(8), 0);
-            exportBtn.setClickable(true);
-            exportBtn.setFocusable(true);
-            InputFeedbacks.wireClick(exportBtn, () -> {
-                Intent intent = new Intent(getContext(), com.shiyu.sime.ExportLearningActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                getContext().startActivity(intent);
-            });
-            header.addView(exportBtn);
             TextView importBtn = new TextView(getContext());
-            importBtn.setText("导入自学习文件");
+            importBtn.setText("导入文件");
             importBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CAPTION);
             importBtn.setTextColor(theme.accentColor);
             importBtn.setGravity(Gravity.CENTER);
-            importBtn.setPadding(dp(6), 0, dp(6), 0);
+            importBtn.setPadding(dp(4), 0, dp(4), 0);
             importBtn.setClickable(true);
             importBtn.setFocusable(true);
+            importBtn.setSingleLine(true);
             InputFeedbacks.wireClick(importBtn, () -> {
                 Intent intent = new Intent(getContext(), com.shiyu.sime.ImportLearningActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
             });
-            header.addView(importBtn);
-            actionBtn.setText("+");
-            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.DISPLAY);
-            actionBtn.setTextColor(theme.keyText);
-            InputFeedbacks.wireClick(actionBtn, () -> {
-                if (listener != null) listener.onAddPhrase();
-            });
+            header.addView(importBtn, new LinearLayout.LayoutParams(0,
+                    LayoutParams.MATCH_PARENT, 1f));
         } else {
-            actionBtn.setText("🗑");
-            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
-            actionBtn.setTextColor(0xFFE53935);  // red 600
-            InputFeedbacks.wireClick(actionBtn, () -> {
+            View leftSpacer = new View(getContext());
+            header.addView(leftSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        }
+
+        // Tab pill remains centered between the two file actions.
+        LinearLayout tabPill = new LinearLayout(getContext());
+        tabPill.setOrientation(LinearLayout.HORIZONTAL);
+        tabPill.setBackground(roundedRect(theme.functionKeyBackground, dp(16)));
+        tabPill.setPadding(dp(2), dp(2), dp(2), dp(2));
+        header.addView(tabPill, new LinearLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        tabPill.addView(buildTab("剪切板", Tab.CLIPBOARD));
+        tabPill.addView(buildTab("个人字典", Tab.QUICK_PHRASE));
+
+        if (activeTab == Tab.QUICK_PHRASE) {
+            TextView exportBtn = new TextView(getContext());
+            exportBtn.setText("导出文件");
+            exportBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CAPTION);
+            exportBtn.setTextColor(theme.accentColor);
+            exportBtn.setGravity(Gravity.CENTER);
+            exportBtn.setPadding(dp(4), 0, dp(4), 0);
+            exportBtn.setClickable(true);
+            exportBtn.setFocusable(true);
+            exportBtn.setSingleLine(true);
+            InputFeedbacks.wireClick(exportBtn, () -> {
+                Intent intent = new Intent(getContext(), com.shiyu.sime.ExportLearningActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            });
+            header.addView(exportBtn, new LinearLayout.LayoutParams(0,
+                    LayoutParams.MATCH_PARENT, 1f));
+        } else {
+            TextView clearBtn = new TextView(getContext());
+            clearBtn.setText("🗑");
+            clearBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
+            clearBtn.setTextColor(0xFFE53935);
+            clearBtn.setGravity(Gravity.CENTER);
+            clearBtn.setBackground(makeCircleBg(
+                    theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
+            InputFeedbacks.wireClick(clearBtn, () -> {
                 clipboardStore.clearAll();
                 renderList();
             });
+            header.addView(clearBtn, new LinearLayout.LayoutParams(dp(36), dp(36)));
         }
-        LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(
-                dp(36), dp(36));
-        actionBtn.setLayoutParams(actionLp);
-        header.addView(actionBtn);
+
+        // Dedicated add-entry row below the tabs. It occupies normal layout
+        // space, so its enlarged hit target never overlays the editable list.
+        if (activeTab == Tab.QUICK_PHRASE) {
+            LinearLayout addRow = new LinearLayout(getContext());
+            addRow.setGravity(Gravity.CENTER);
+            addRow.setOrientation(LinearLayout.HORIZONTAL);
+            addView(addRow, new LayoutParams(LayoutParams.MATCH_PARENT, dp(50)));
+
+            TextView addBtn = new TextView(getContext());
+            addBtn.setText("+");
+            addBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.DISPLAY);
+            addBtn.setTextColor(theme.keyText);
+            addBtn.setGravity(Gravity.CENTER);
+            addBtn.setBackground(makeCircleBg(
+                    theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
+            addRow.addView(addBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            addBtn.setClickable(true);
+            addBtn.setFocusable(true);
+            InputFeedbacks.wireClick(addBtn, () -> {
+                if (listener != null) listener.onAddPhrase();
+            });
+        }
 
         // === Body: scrollable list ===
         ScrollView scroll = new ScrollView(getContext());
